@@ -3,7 +3,8 @@ project(nayomi-firmware.elf C CXX ASM)     # ASM must be enabled explicitly or t
 
 set(LIB_ROOT ${CMAKE_SOURCE_DIR}/libraries/AT32F402_405_Firmware_Library)
 
-add_executable(${PROJECT_NAME})
+add_executable(${PROJECT_NAME}
+        core/src/ssd1306.cpp)
 
 target_link_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
@@ -24,6 +25,8 @@ target_sources(${PROJECT_NAME} PRIVATE
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support/startup/gcc/startup_at32f402_405.s
         ${LIB_ROOT}/libraries/drivers/src/at32f402_405_crm.c
         ${LIB_ROOT}/libraries/drivers/src/at32f402_405_gpio.c
+        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_i2c.c
+        ${LIB_ROOT}/middlewares/i2c_application_library/i2c_application.c
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -32,4 +35,5 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support
         ${LIB_ROOT}/libraries/cmsis/cm4/core_support
         ${LIB_ROOT}/libraries/drivers/inc
+        ${LIB_ROOT}/middlewares/i2c_application_library
 )
