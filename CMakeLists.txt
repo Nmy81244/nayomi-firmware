@@ -17,7 +17,9 @@ target_link_options(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE AT32F405CCT7)
 
 target_sources(${PROJECT_NAME} PRIVATE
-        src/main.cpp
+        core/src/main.cpp
+        core/src/board_pinout.cpp
+
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support/system_at32f402_405.c
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support/startup/gcc/startup_at32f402_405.s
         ${LIB_ROOT}/libraries/drivers/src/at32f402_405_crm.c
@@ -25,7 +27,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-        src                                                         # for your at32f402_405_conf.h — see note below
+        core/inc
+
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support
         ${LIB_ROOT}/libraries/cmsis/cm4/core_support
         ${LIB_ROOT}/libraries/drivers/inc
