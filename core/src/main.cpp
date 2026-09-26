@@ -268,13 +268,6 @@ static void cli_process_command(char *command)
     cli_write(buffer);
 }
 
-static void cli_reset_input(void)
-{
-    // Never let a partial command survive a USB disconnect/reconnect.
-    static char line[96];
-    (void)line;
-}
-
 /*
  * CLI input state is kept separately from the command handler so it can be
  * reset when the USB connection changes.
@@ -293,12 +286,8 @@ static void cli_reset_input_state(void)
     cli_line[0] = '\0';
 }
 
-static void cli_task(void)
+static void cli_task_bytes(const uint8_t *rx, uint16_t length)
 {
-    uint8_t rx[256];
-
-    const uint16_t length = nayomi_usb_cdc_read(rx, sizeof(rx));
-
     for(uint16_t i = 0; i < length; ++i)
     {
         const uint8_t byte = rx[i];
@@ -344,6 +333,143 @@ static void cli_task(void)
         if(cli_line_length < sizeof(cli_line) - 1)
             cli_line[cli_line_length++] = ch;
     }
+}
+
+
+static void protocol_send(uint8_t type, uint8_t sequence,
+                          const uint8_t *payload, uint16_t length)
+{
+    uint8_t frame[256];
+    const uint16_t frame_length = nayomi_protocol::encode_frame(
+        type, sequence, payload, length, frame, sizeof(frame));
+
+    if(frame_length == 0)
+        return;
+
+    while(nayomi_usb_is_configured() &&
+          !nayomi_usb_cdc_write(frame, frame_length))
+    {
+    }
+}
+
+static void protocol_handle(const nayomi_protocol::Frame &frame)
+{
+    uint8_t payload[128] = {};
+    uint16_t length = 0;
+
+    switch(frame.type)
+    {
+        case nayomi_protocol::CMD_PING:
+            payload[0] = 1; // protocol version
+            protocol_send(nayomi_protocol::RSP_MASK | frame.type,
+                          frame.sequence, payload, 1);
+            break;
+
+        case nayomi_protocol::CMD_GET_INFO:
+        {
+            const char *info =
+                "Nayomi Keypad|AT32F405CCT7|USB HS HID+CDC";
+            length = static_cast<uint16_t>(std::strlen(info));
+            protocol_send(nayomi_protocol::RSP_MASK | frame.type,
+                          frame.sequence,
+                          reinterpret_cast<const uint8_t *>(info),
+                          length);
+            break;
+        }
+
+        case nayomi_protocol::CMD_GET_STATUS:
+        {
+            // raw ADC, mV, decoder frame count, CRC errors, malformed frames.
+            const uint32_t values[5] =
+            {
+                static_cast<uint32_t>(hall_raw),
+                hall_millivolts,
+                protocol_decoder.frame_count(),
+                protocol_decoder.crc_error_count(),
+                protocol_decoder.malformed_count()
+            };
+            std::memcpy(payload, values, sizeof(values));
+            protocol_send(nayomi_protocol::RSP_MASK | frame.type,
+                          frame.sequence, payload, sizeof(values));
+            break;
+        }
+
+        case nayomi_protocol::CMD_GET_HALL:
+        {
+            const uint32_t values[2] =
+            {
+                static_cast<uint32_t>(hall_raw),
+                hall_millivolts
+            };
+            std::memcpy(payload, values, sizeof(values));
+            protocol_send(nayomi_protocol::RSP_MASK | frame.type,
+                          frame.sequence, payload, sizeof(values));
+            break;
+        }
+
+        case nayomi_protocol::CMD_RESET:
+            protocol_send(nayomi_protocol::RSP_MASK | frame.type,
+                          frame.sequence, nullptr, 0);
+            nayomi_usb_delay_ms(10);
+            NVIC_SystemReset();
+            break;
+
+        default:
+            // Unknown commands get an empty response with the same sequence.
+            protocol_send(nayomi_protocol::RSP_MASK | frame.type,
+                          frame.sequence, nullptr, 0);
+            break;
+    }
+}
+
+static void protocol_task(void)
+{
+    uint8_t rx[256];
+    const uint16_t length = nayomi_usb_cdc_read(rx, sizeof(rx));
+
+    if(length == 0)
+        return;
+
+    protocol_decoder.feed(rx, length);
+
+    bool got_binary = false;
+    nayomi_protocol::Frame frame;
+    while(protocol_decoder.take_frame(frame))
+    {
+        got_binary = true;
+        protocol_binary_mode = true;
+        protocol_handle(frame);
+    }
+
+    if(!protocol_binary_mode && !got_binary)
+        cli_task_bytes(rx, length);
+}
+
+static uint32_t protocol_last_telemetry_ms = 0;
+
+static void protocol_telemetry_task(void)
+{
+    static uint32_t tick = 0;
+    ++tick;
+
+    if(!protocol_binary_mode || !nayomi_usb_is_configured())
+        return;
+
+    if(tick - protocol_last_telemetry_ms < 100)
+        return;
+
+    protocol_last_telemetry_ms = tick;
+
+    const uint32_t values[2] =
+    {
+        static_cast<uint32_t>(hall_raw),
+        hall_millivolts
+    };
+
+    protocol_send(nayomi_protocol::EVT_HALL,
+                  protocol_tx_sequence++,
+                  reinterpret_cast<const uint8_t *>(values),
+                  sizeof(values));
 }
 
 int main(void)
