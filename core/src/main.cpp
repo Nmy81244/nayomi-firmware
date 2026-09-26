@@ -78,37 +78,6 @@ static void cli_write(const char *text)
     }
 }
 
-static void cli_dump_rx(const uint8_t *data, uint16_t length)
-{
-    char buffer[192];
-    int offset = std::snprintf(buffer, sizeof(buffer), "RX[%u]:", static_cast<unsigned>(length));
-
-    if(offset < 0)
-        return;
-
-    const uint16_t limit = length < 32U ? length : 32U;
-
-    for(uint16_t i = 0; i < limit && offset < static_cast<int>(sizeof(buffer) - 4); ++i)
-    {
-        offset += std::snprintf(
-            buffer + offset,
-            sizeof(buffer) - static_cast<size_t>(offset),
-            " %02X",
-            static_cast<unsigned>(data[i])
-        );
-    }
-
-    if(length > limit && offset < static_cast<int>(sizeof(buffer) - 5))
-        offset += std::snprintf(buffer + offset, sizeof(buffer) - static_cast<size_t>(offset), " ...");
-
-    if(offset > 0)
-    {
-        buffer[static_cast<size_t>(offset)] = '\0';
-        cli_write(buffer);
-        cli_write("\r\n");
-    }
-}
-
 static void cli_write_hall(void)
 {
     char buffer[96];
@@ -245,9 +214,6 @@ static void cli_task(void)
     uint8_t rx[256];
 
     const uint16_t length = nayomi_usb_cdc_read(rx, sizeof(rx));
-
-    if(length != 0)
-        cli_dump_rx(rx, length);
 
     for(uint16_t i = 0; i < length; ++i)
     {
