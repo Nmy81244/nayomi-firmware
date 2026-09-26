@@ -187,53 +187,78 @@ static void cli_process_command(char *command)
     cli_write("unknown command; try 'help'\r\n");
 }
 
+static void cli_reset_input(void)
+{
+    // Never let a partial command survive a USB disconnect/reconnect.
+    static char line[96];
+    (void)line;
+}
+
+/*
+ * CLI input state is kept separately from the command handler so it can be
+ * reset when the USB connection changes.
+ */
+static char cli_line[96];
+static uint16_t cli_line_length = 0;
+static bool cli_ignore_lf_after_cr = false;
+
+static void cli_reset_input_state(void)
+{
+    cli_line_length = 0;
+    cli_ignore_lf_after_cr = false;
+    cli_line[0] = '\0';
+}
+
 static void cli_task(void)
 {
-    static char line[96];
-    static uint16_t line_length = 0;
-    static bool ignore_lf_after_cr = false;
     uint8_t rx[256];
 
     const uint16_t length = nayomi_usb_cdc_read(rx, sizeof(rx));
 
     for(uint16_t i = 0; i < length; ++i)
     {
-        const char ch = static_cast<char>(rx[i]);
+        const uint8_t byte = rx[i];
+        const char ch = static_cast<char>(byte);
 
         // Treat CRLF as one Enter key. This prevents a normal terminal's
         // "\\r\\n" line ending from generating a second empty prompt.
-        if(ch == '\n' && ignore_lf_after_cr)
+        if(ch == '\n' && cli_ignore_lf_after_cr)
         {
-            ignore_lf_after_cr = false;
+            cli_ignore_lf_after_cr = false;
             continue;
         }
 
         if(ch == '\r' || ch == '\n')
         {
-            ignore_lf_after_cr = (ch == '\r');
+            cli_ignore_lf_after_cr = (ch == '\r');
 
-            if(line_length != 0)
+            if(cli_line_length != 0)
             {
-                line[line_length] = '\0';
-                cli_process_command(line);
-                line_length = 0;
+                cli_line[cli_line_length] = '\0';
+                cli_process_command(cli_line);
+                cli_reset_input_state();
             }
 
             cli_write("nayomi> ");
             continue;
         }
 
-        ignore_lf_after_cr = false;
+        cli_ignore_lf_after_cr = false;
 
         if(ch == '\b' || ch == 0x7F)
         {
-            if(line_length != 0)
-                --line_length;
+            if(cli_line_length != 0)
+                --cli_line_length;
             continue;
         }
 
-        if(line_length < sizeof(line) - 1)
-            line[line_length++] = ch;
+        // A CLI command is ASCII text. Drop NUL and other control bytes
+        // instead of allowing a stray USB/TTY byte to poison the command.
+        if(byte < 0x20 || byte > 0x7E)
+            continue;
+
+        if(cli_line_length < sizeof(cli_line) - 1)
+            cli_line[cli_line_length++] = ch;
     }
 }
 
@@ -250,6 +275,8 @@ int main(void)
 
     bool was_configured = false;
 
+    cli_reset_input_state();
+
     while(true)
     {
         hall_raw = hall_read();
@@ -260,6 +287,8 @@ int main(void)
 
         if(configured && !was_configured)
         {
+            cli_reset_input_state();
+
             cli_write(
                 "\r\n"
                 "Nayomi USB online. Type 'help'.\r\n"
