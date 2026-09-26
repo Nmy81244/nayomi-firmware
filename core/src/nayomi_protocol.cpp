@@ -155,11 +155,11 @@ void Decoder::feed(const uint8_t *data, std::size_t length)
                 if(payload_pos_ == current_.length)
                 {
                     crc_pos_ = 0;
-                    state_ = State::CRC;
+                    state_ = State::READ_CRC;
                 }
                 break;
 
-            case State::CRC:
+            case State::READ_CRC:
                 crc_bytes_[crc_pos_++] = byte;
 
                 if(crc_pos_ == sizeof(crc_bytes_))
