@@ -6,6 +6,7 @@
 
 #include "board_pinout.h"
 #include "nayomi_usb.h"
+#include "nayomi_protocol.h"
 
 volatile uint16_t hall_raw = 0;
 volatile uint32_t hall_millivolts = 0;
@@ -281,6 +282,9 @@ static void cli_reset_input(void)
 static char cli_line[96];
 static uint16_t cli_line_length = 0;
 static bool cli_ignore_lf_after_cr = false;
+static nayomi_protocol::Decoder protocol_decoder;
+static uint8_t protocol_tx_sequence = 0;
+static uint32_t telemetry_divider = 0;
 
 static void cli_reset_input_state(void)
 {
@@ -378,6 +382,8 @@ int main(void)
 
         was_configured = configured;
 
+        protocol_task();
+        protocol_telemetry_task();
         cli_task();
     }
 }
