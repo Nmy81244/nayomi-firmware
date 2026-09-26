@@ -1,6 +1,11 @@
 #include <at32f402_405.h>
+#include <at32f402_405_clock.h>
+
+#include <cstdio>
+#include <cstring>
 
 #include "board_pinout.h"
+#include "nayomi_usb.h"
 
 volatile uint16_t hall_raw = 0;
 volatile uint32_t hall_millivolts = 0;
@@ -9,17 +14,9 @@ static void hall_adc_init(void)
 {
     adc_base_config_type adc_base_struct;
 
-    /* ADC peripheral clock */
     crm_periph_clock_enable(HALL_1_ADC_CRM_CLK, TRUE);
-
-    /*
-     * HCLK / 8
-     * At 216 MHz HCLK this gives 27 MHz ADC clock,
-     * which is within the ADC clock limit.
-     */
     adc_clock_div_set(ADC_DIV_8);
 
-    /* Basic ADC configuration */
     adc_base_default_para_init(&adc_base_struct);
 
     adc_base_struct.sequence_mode           = FALSE;
@@ -29,7 +26,6 @@ static void hall_adc_init(void)
 
     adc_base_config(HALL_1_ADC, &adc_base_struct);
 
-    /* PA0 = ADC channel 0 */
     adc_ordinary_channel_set(
         HALL_1_ADC,
         HALL_1_ADC_CHANNEL,
@@ -37,17 +33,14 @@ static void hall_adc_init(void)
         ADC_SAMPLETIME_239_5
     );
 
-    /* Software-triggered conversion */
     adc_ordinary_conversion_trigger_set(
         HALL_1_ADC,
         ADC12_ORDINARY_TRIG_SOFTWARE,
         TRUE
     );
 
-    /* Enable ADC */
     adc_enable(HALL_1_ADC, TRUE);
 
-    /* ADC calibration */
     adc_calibration_init(HALL_1_ADC);
 
     while(adc_calibration_init_status_get(HALL_1_ADC) != RESET)
@@ -63,44 +56,196 @@ static void hall_adc_init(void)
 
 static uint16_t hall_read(void)
 {
-    /* Start one conversion */
-    adc_ordinary_software_trigger_enable(
-        HALL_1_ADC,
-        TRUE
-    );
+    adc_ordinary_software_trigger_enable(HALL_1_ADC, TRUE);
 
-    /* Wait for conversion complete */
     while(adc_flag_get(HALL_1_ADC, ADC_CCE_FLAG) == RESET)
     {
     }
 
-    /* Read result */
-    uint16_t value =
-        adc_ordinary_conversion_data_get(HALL_1_ADC);
-
-    /* Clear completion flag */
+    uint16_t value = adc_ordinary_conversion_data_get(HALL_1_ADC);
     adc_flag_clear(HALL_1_ADC, ADC_CCE_FLAG);
 
     return value;
 }
 
+static void cli_write(const char *text)
+{
+    const uint16_t length = static_cast<uint16_t>(std::strlen(text));
+
+    while(nayomi_usb_is_configured() &&
+          !nayomi_usb_cdc_write(reinterpret_cast<const uint8_t *>(text), length))
+    {
+    }
+}
+
+static void cli_write_hall(void)
+{
+    char buffer[96];
+
+    const int length = std::snprintf(
+        buffer,
+        sizeof(buffer),
+        "hall1: raw=%u mV=%lu\r\n",
+        static_cast<unsigned>(hall_raw),
+        static_cast<unsigned long>(hall_millivolts)
+    );
+
+    if(length > 0)
+    {
+        const uint16_t send_length =
+            static_cast<uint16_t>(length < static_cast<int>(sizeof(buffer))
+                                      ? length
+                                      : sizeof(buffer) - 1);
+
+        while(nayomi_usb_is_configured() &&
+              !nayomi_usb_cdc_write(
+                  reinterpret_cast<const uint8_t *>(buffer),
+                  send_length))
+        {
+        }
+    }
+}
+
+static void cli_key_test(void)
+{
+    static const uint8_t key_a[8] =
+    {
+        0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+
+    static const uint8_t key_release[8] = {0};
+
+    while(nayomi_usb_is_configured() &&
+          !nayomi_usb_keyboard_send_report(key_a, sizeof(key_a)))
+    {
+    }
+
+    usb_delay_ms(10);
+
+    while(nayomi_usb_is_configured() &&
+          !nayomi_usb_keyboard_send_report(key_release, sizeof(key_release)))
+    {
+    }
+}
+
+static void cli_process_command(char *command)
+{
+    if(std::strcmp(command, "help") == 0)
+    {
+        cli_write(
+            "commands:\r\n"
+            "  help     - show this help\r\n"
+            "  info     - show device information\r\n"
+            "  hall     - read Hall sensor 1\r\n"
+            "  key a    - send a keyboard A test report\r\n"
+            "  reset    - reset the MCU\r\n"
+        );
+        return;
+    }
+
+    if(std::strcmp(command, "info") == 0)
+    {
+        cli_write(
+            "Nayomi\r\n"
+            "MCU: AT32F405CCT7\r\n"
+            "USB: High-Speed composite HID + CDC\r\n"
+            "Keyboard HID interval: 125 us\r\n"
+        );
+        return;
+    }
+
+    if(std::strcmp(command, "hall") == 0)
+    {
+        cli_write_hall();
+        return;
+    }
+
+    if(std::strcmp(command, "key a") == 0)
+    {
+        cli_key_test();
+        cli_write("sent A\r\n");
+        return;
+    }
+
+    if(std::strcmp(command, "reset") == 0)
+    {
+        cli_write("resetting...\r\n");
+        usb_delay_ms(10);
+        NVIC_SystemReset();
+    }
+
+    cli_write("unknown command; try 'help'\r\n");
+}
+
+static void cli_task(void)
+{
+    static char line[96];
+    static uint16_t line_length = 0;
+    uint8_t rx[256];
+
+    const uint16_t length = nayomi_usb_cdc_read(rx, sizeof(rx));
+
+    for(uint16_t i = 0; i < length; ++i)
+    {
+        const char ch = static_cast<char>(rx[i]);
+
+        if(ch == '\r' || ch == '\n')
+        {
+            if(line_length != 0)
+            {
+                line[line_length] = '\0';
+                cli_process_command(line);
+                line_length = 0;
+            }
+
+            cli_write("nayomi> ");
+            continue;
+        }
+
+        if(ch == '\b' || ch == 0x7F)
+        {
+            if(line_length != 0)
+                --line_length;
+            continue;
+        }
+
+        if(line_length < sizeof(line) - 1)
+            line[line_length++] = ch;
+    }
+}
+
 int main(void)
 {
-    board_pinout_init();
+    nvic_priority_group_config(NVIC_PRIORITY_GROUP_4);
 
+    system_clock_config();
+    board_pinout_init();
     hall_adc_init();
+    nayomi_usb_init();
+
+    LED_OFF();
+
+    bool was_configured = false;
 
     while(true)
     {
         hall_raw = hall_read();
-
-        /*
-         * Assuming the ADC reference/input range is 0–3.3 V:
-         *
-         * 0     = 0 V
-         * 4095  = 3.3 V
-         */
         hall_millivolts =
-            ((uint32_t)hall_raw * 3300U) / 4095U;
+            (static_cast<uint32_t>(hall_raw) * 3300U) / 4095U;
+
+        const bool configured = nayomi_usb_is_configured();
+
+        if(configured && !was_configured)
+        {
+            cli_write(
+                "\r\n"
+                "Nayomi USB online. Type 'help'.\r\n"
+                "nayomi> "
+            );
+        }
+
+        was_configured = configured;
+
+        cli_task();
     }
 }
