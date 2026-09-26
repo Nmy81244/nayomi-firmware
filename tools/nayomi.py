@@ -222,18 +222,18 @@ def monitor(dev):
                         packets = 0
                         last_time = time.monotonic()
 
-                    # Status counters are refreshed independently; keep the
-                    # live line useful even if the status response is delayed.
                     print(
                         f"\r\x1b[KHall 1: {raw:4d} raw / {mv:4d} mV"
                         f"   telemetry: {rate:5.1f} Hz",
                         end="",
                         flush=True,
                     )
+
                 elif msg_type == (CMD_STATUS | RSP):
                     raw, mv = struct.unpack_from("<HH", payload, 0)
                     usb = "ON" if payload[4] else "OFF"
                     frames, crc_errors, malformed = struct.unpack_from("<III", payload, 5)
+
                     print(
                         f"\r\x1b[KHall 1: {raw:4d} raw / {mv:4d} mV"
                         f"   USB: {usb}   RX: {frames}"
@@ -242,17 +242,21 @@ def monitor(dev):
                         end="",
                         flush=True,
                     )
+
     except KeyboardInterrupt:
         print()
     except (ConnectionError, OSError):
         print("\r\x1b[KNayomi disconnected.")
 
+
+def main():
     parser = argparse.ArgumentParser(description="Nayomi keypad command-line tool")
     parser.add_argument(
         "--device",
         default="/dev/serial/by-id/usb-Nayomi_Keypad_23EE39680516-if00",
         help="CDC device path",
     )
+
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("ping")
     sub.add_parser("info")
@@ -262,6 +266,7 @@ def monitor(dev):
     sub.add_parser("reset")
 
     args = parser.parse_args()
+
     try:
         dev = Nayomi(args.device)
     except ConnectionError as exc:
@@ -289,13 +294,22 @@ def monitor(dev):
         elif args.command == "reset":
             print(dev.request(CMD_RESET).decode(errors="replace"))
 
+        return 0
+
+    except ConnectionError:
+        print("Nayomi disconnected.")
+        return 0
+
     except TimeoutError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"Nayomi: {exc}")
         return 1
+
+    except OSError as exc:
+        print(f"Nayomi: connection lost ({exc})")
+        return 0
+
     finally:
         dev.close()
-
-    return 0
 
 
 if __name__ == "__main__":
