@@ -360,13 +360,14 @@ static void protocol_handle(const nayomi_protocol::Frame &frame)
     switch(frame.type)
     {
         case nayomi_protocol::CMD_PING:
+        {
             const char *pong = "Nayomi";
             protocol_send(nayomi_protocol::RSP_MASK | frame.type,
                           frame.sequence,
                           reinterpret_cast<const uint8_t *>(pong),
                           static_cast<uint16_t>(std::strlen(pong)));
             break;
-
+        }
         case nayomi_protocol::CMD_GET_INFO:
         {
             const uint16_t api = 1;
