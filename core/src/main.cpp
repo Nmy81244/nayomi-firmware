@@ -284,6 +284,7 @@ static uint16_t cli_line_length = 0;
 static bool cli_ignore_lf_after_cr = false;
 static nayomi_protocol::Decoder protocol_decoder;
 static uint8_t protocol_tx_sequence = 0;
+static bool protocol_binary_mode = false;
 
 static void cli_reset_input_state(void)
 {
@@ -371,6 +372,8 @@ int main(void)
         if(configured && !was_configured)
         {
             cli_reset_input_state();
+            protocol_binary_mode = false;
+            protocol_decoder.reset();
 
             cli_write(
                 "\r\n"
