@@ -235,7 +235,36 @@ static void cli_process_command(char *command)
         NVIC_SystemReset();
     }
 
-    cli_write("unknown command; try 'help'\r\n");
+    char buffer[256];
+    int offset = std::snprintf(
+        buffer,
+        sizeof(buffer),
+        "unknown command; try 'help' (len=%u hex:",
+        static_cast<unsigned>(std::strlen(command))
+    );
+
+    const size_t command_length = std::strlen(command);
+    for(size_t i = 0;
+        i < command_length && offset < static_cast<int>(sizeof(buffer) - 5);
+        ++i)
+    {
+        offset += std::snprintf(
+            buffer + offset,
+            sizeof(buffer) - static_cast<size_t>(offset),
+            " %02X",
+            static_cast<unsigned>(static_cast<uint8_t>(command[i]))
+        );
+    }
+
+    std::snprintf(
+        buffer + (offset < static_cast<int>(sizeof(buffer)) ? offset : sizeof(buffer) - 1),
+        offset < static_cast<int>(sizeof(buffer))
+            ? sizeof(buffer) - static_cast<size_t>(offset)
+            : 1,
+        ")\r\n"
+    );
+
+    cli_write(buffer);
 }
 
 static void cli_reset_input(void)
