@@ -130,7 +130,17 @@ static void cli_key_test(void)
 
 static void cli_process_command(char *command)
 {
-    if(std::strcmp(command, "help") == 0)
+    // Normalize leading/trailing spaces so commands copied from a terminal
+    // or script are accepted without surprising "unknown command" errors.
+    while(*command == ' ' || *command == '\t')
+        ++command;
+
+    char *end = command + std::strlen(command);
+    while(end > command && (end[-1] == ' ' || end[-1] == '\t'))
+        --end;
+    *end = '\0';
+
+    if(std::strcmp(command, "help") == 0 || std::strcmp(command, "?") == 0)
     {
         cli_write(
             "commands:\r\n"
@@ -181,6 +191,7 @@ static void cli_task(void)
 {
     static char line[96];
     static uint16_t line_length = 0;
+    static bool ignore_lf_after_cr = false;
     uint8_t rx[256];
 
     const uint16_t length = nayomi_usb_cdc_read(rx, sizeof(rx));
@@ -189,8 +200,18 @@ static void cli_task(void)
     {
         const char ch = static_cast<char>(rx[i]);
 
+        // Treat CRLF as one Enter key. This prevents a normal terminal's
+        // "\\r\\n" line ending from generating a second empty prompt.
+        if(ch == '\n' && ignore_lf_after_cr)
+        {
+            ignore_lf_after_cr = false;
+            continue;
+        }
+
         if(ch == '\r' || ch == '\n')
         {
+            ignore_lf_after_cr = (ch == '\r');
+
             if(line_length != 0)
             {
                 line[line_length] = '\0';
@@ -201,6 +222,8 @@ static void cli_task(void)
             cli_write("nayomi> ");
             continue;
         }
+
+        ignore_lf_after_cr = false;
 
         if(ch == '\b' || ch == 0x7F)
         {
