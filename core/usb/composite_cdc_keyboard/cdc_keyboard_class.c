@@ -286,6 +286,7 @@ static usb_sts_type class_clear_handler(void *udev)
 {
   usb_sts_type status = USB_OK;
   usbd_core_type *pudev = (usbd_core_type *)udev;
+  vcp_keyboard_type *vcpkybrd = (vcp_keyboard_type *)pudev->class_handler->pdata;
 
   /* close in endpoint */
   usbd_ept_close(pudev, USBD_VCPKYBRD_CDC_INT_EPT);
