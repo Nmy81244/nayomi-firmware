@@ -64,7 +64,7 @@ private:
         SEEK_MAGIC1,
         HEADER,
         PAYLOAD,
-        CRC
+        READ_CRC
     };
 
     void reset_parser();
