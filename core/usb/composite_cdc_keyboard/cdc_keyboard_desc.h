@@ -70,7 +70,7 @@ extern "C" {
   * @brief usb string define(vendor, product configuration, interface)
   */
 #define USBD_VCPKYBRD_DESC_MANUFACTURER_STRING    "Nayomi"
-#define USBD_VCPKYBRD_DESC_PRODUCT_STRING         "Nayomi"
+#define USBD_VCPKYBRD_DESC_PRODUCT_STRING         "Keypad"
 #define USBD_VCPKYBRD_DESC_CONFIGURATION_STRING   "Nayomi Configuration"
 #define USBD_VCPKYBRD_DESC_INTERFACE_STRING       "Nayomi Composite Interface"
 
