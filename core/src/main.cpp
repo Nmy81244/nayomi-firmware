@@ -360,50 +360,56 @@ static void protocol_handle(const nayomi_protocol::Frame &frame)
     switch(frame.type)
     {
         case nayomi_protocol::CMD_PING:
-            payload[0] = 1; // protocol version
+            const char *pong = "Nayomi";
             protocol_send(nayomi_protocol::RSP_MASK | frame.type,
-                          frame.sequence, payload, 1);
+                          frame.sequence,
+                          reinterpret_cast<const uint8_t *>(pong),
+                          static_cast<uint16_t>(std::strlen(pong)));
             break;
 
         case nayomi_protocol::CMD_GET_INFO:
         {
-            const char *info =
-                "Nayomi Keypad|AT32F405CCT7|USB HS HID+CDC";
-            length = static_cast<uint16_t>(std::strlen(info));
+            const uint16_t api = 1;
+            const char *mcu = "AT32F405CCT7";
+            const char *product = "Nayomi Keypad";
+            std::memcpy(payload, &api, sizeof(api));
+            std::memcpy(payload + 2, mcu, std::strlen(mcu) + 1);
+            std::memcpy(payload + 2 + std::strlen(mcu) + 1,
+                        product, std::strlen(product) + 1);
+            length = static_cast<uint16_t>(
+                2 + std::strlen(mcu) + 1 + std::strlen(product) + 1);
             protocol_send(nayomi_protocol::RSP_MASK | frame.type,
-                          frame.sequence,
-                          reinterpret_cast<const uint8_t *>(info),
-                          length);
+                          frame.sequence, payload, length);
             break;
         }
 
         case nayomi_protocol::CMD_GET_STATUS:
         {
-            // raw ADC, mV, decoder frame count, CRC errors, malformed frames.
-            const uint32_t values[5] =
-            {
-                static_cast<uint32_t>(hall_raw),
-                hall_millivolts,
-                protocol_decoder.frame_count(),
-                protocol_decoder.crc_error_count(),
-                protocol_decoder.malformed_count()
-            };
-            std::memcpy(payload, values, sizeof(values));
+            const uint16_t raw = hall_raw;
+            const uint16_t mv = static_cast<uint16_t>(hall_millivolts);
+            const uint8_t usb = nayomi_usb_is_configured() ? 1 : 0;
+            const uint32_t frames = protocol_decoder.frame_count();
+            const uint32_t crc_errors = protocol_decoder.crc_error_count();
+            const uint32_t malformed = protocol_decoder.malformed_count();
+            std::memcpy(payload + 0, &raw, sizeof(raw));
+            std::memcpy(payload + 2, &mv, sizeof(mv));
+            payload[4] = usb;
+            std::memcpy(payload + 5, &frames, sizeof(frames));
+            std::memcpy(payload + 9, &crc_errors, sizeof(crc_errors));
+            std::memcpy(payload + 13, &malformed, sizeof(malformed));
             protocol_send(nayomi_protocol::RSP_MASK | frame.type,
-                          frame.sequence, payload, sizeof(values));
+                          frame.sequence, payload, 17);
             break;
         }
 
         case nayomi_protocol::CMD_GET_HALL:
         {
-            const uint32_t values[2] =
-            {
-                static_cast<uint32_t>(hall_raw),
-                hall_millivolts
-            };
-            std::memcpy(payload, values, sizeof(values));
+            const uint16_t raw = hall_raw;
+            const uint16_t mv = static_cast<uint16_t>(hall_millivolts);
+            std::memcpy(payload + 0, &raw, sizeof(raw));
+            std::memcpy(payload + 2, &mv, sizeof(mv));
             protocol_send(nayomi_protocol::RSP_MASK | frame.type,
-                          frame.sequence, payload, sizeof(values));
+                          frame.sequence, payload, 4);
             break;
         }
 
@@ -460,16 +466,15 @@ static void protocol_telemetry_task(void)
 
     protocol_last_telemetry_ms = tick;
 
-    const uint32_t values[2] =
-    {
-        static_cast<uint32_t>(hall_raw),
-        hall_millivolts
-    };
+    const uint16_t raw = hall_raw;
+    const uint16_t mv = static_cast<uint16_t>(hall_millivolts);
+    uint8_t payload[4];
+    std::memcpy(payload + 0, &raw, sizeof(raw));
+    std::memcpy(payload + 2, &mv, sizeof(mv));
 
     protocol_send(nayomi_protocol::EVT_HALL,
                   protocol_tx_sequence++,
-                  reinterpret_cast<const uint8_t *>(values),
-                  sizeof(values));
+                  payload, sizeof(payload));
 }
 
 int main(void)
