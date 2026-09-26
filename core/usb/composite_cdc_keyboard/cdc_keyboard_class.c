@@ -25,6 +25,7 @@
 #include "usbd_core.h"
 #include "cdc_keyboard_class.h"
 #include "cdc_keyboard_desc.h"
+#include "nayomi_input.h"
 
 /** @addtogroup AT32F402_405_middlewares_usbd_class
   * @{
