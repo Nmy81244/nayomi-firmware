@@ -128,6 +128,9 @@ static void cli_key_test(void)
     }
 }
 
+static char cli_last_command[96];
+static uint16_t cli_last_command_length = 0;
+
 static void cli_process_command(char *command)
 {
     // Normalize leading/trailing spaces so commands copied from a terminal
@@ -139,6 +142,54 @@ static void cli_process_command(char *command)
     while(end > command && (end[-1] == ' ' || end[-1] == '\t'))
         --end;
     *end = '\0';
+
+    cli_last_command_length =
+        static_cast<uint16_t>(std::strlen(command) < sizeof(cli_last_command) - 1
+                                  ? std::strlen(command)
+                                  : sizeof(cli_last_command) - 1);
+    std::memcpy(cli_last_command, command, cli_last_command_length);
+    cli_last_command[cli_last_command_length] = '\0';
+
+    if(std::strcmp(command, "debug lastcmd") == 0)
+    {
+        char previous[96];
+        const uint16_t previous_length = cli_last_command_length;
+
+        std::memcpy(previous, cli_last_command, previous_length + 1);
+
+        char buffer[256];
+        int offset = std::snprintf(
+            buffer,
+            sizeof(buffer),
+            "lastcmd[%u]:",
+            static_cast<unsigned>(previous_length)
+        );
+
+        for(uint16_t i = 0;
+            i < previous_length && offset < static_cast<int>(sizeof(buffer) - 4);
+            ++i)
+        {
+            offset += std::snprintf(
+                buffer + offset,
+                sizeof(buffer) - static_cast<size_t>(offset),
+                " %02X",
+                static_cast<unsigned>(
+                    static_cast<uint8_t>(previous[i])
+                )
+            );
+        }
+
+        std::snprintf(
+            buffer + (offset < static_cast<int>(sizeof(buffer)) ? offset : sizeof(buffer) - 1),
+            offset < static_cast<int>(sizeof(buffer))
+                ? sizeof(buffer) - static_cast<size_t>(offset)
+                : 1,
+            "\r\n"
+        );
+
+        cli_write(buffer);
+        return;
+    }
 
     if(std::strcmp(command, "help") == 0 || std::strcmp(command, "?") == 0)
     {
