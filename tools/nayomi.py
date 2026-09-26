@@ -90,7 +90,12 @@ class Decoder:
 
 
 def open_tty(path):
-    fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    except FileNotFoundError as exc:
+        raise ConnectionError("Nayomi is not connected.") from exc
+    except PermissionError as exc:
+        raise ConnectionError("Nayomi is connected but the CDC device is not accessible.") from exc
     attrs = termios.tcgetattr(fd)
 
     # Raw 8N1. CDC ACM doesn't really care about baud rate, but 115200 is
@@ -239,9 +244,9 @@ def monitor(dev):
                     )
     except KeyboardInterrupt:
         print()
+    except (ConnectionError, OSError):
+        print("\r\x1b[KNayomi disconnected.")
 
-
-def main():
     parser = argparse.ArgumentParser(description="Nayomi keypad command-line tool")
     parser.add_argument(
         "--device",
@@ -257,7 +262,11 @@ def main():
     sub.add_parser("reset")
 
     args = parser.parse_args()
-    dev = Nayomi(args.device)
+    try:
+        dev = Nayomi(args.device)
+    except ConnectionError as exc:
+        print(exc)
+        return 0
 
     try:
         if args.command == "ping":
