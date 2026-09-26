@@ -581,7 +581,8 @@ static usb_sts_type class_sof_handler(void *udev)
 {
   usb_sts_type status = USB_OK;
 
-  /* ...user code... */
+  (void)udev;
+  nayomi_input_sof();
 
   return status;
 }
