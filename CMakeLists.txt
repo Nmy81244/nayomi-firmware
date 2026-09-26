@@ -8,8 +8,10 @@ add_executable(${PROJECT_NAME})
 target_compile_options(${PROJECT_NAME} PRIVATE
         -g3
         -Og
-        -fno-exceptions
-        -fno-rtti
+)
+
+target_compile_options(${PROJECT_NAME} PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -31,6 +33,8 @@ target_sources(${PROJECT_NAME} PRIVATE
         core/src/board_pinout.cpp
         core/usb/nayomi_usb.c
         core/usb/nayomi_usb_int.c
+        core/usb/composite_cdc_keyboard/cdc_keyboard_class.c
+        core/usb/composite_cdc_keyboard/cdc_keyboard_desc.c
 
         ${LIB_ROOT}/project/at_start_f405/templates/src/at32f402_405_clock.c
 
@@ -51,14 +55,12 @@ target_sources(${PROJECT_NAME} PRIVATE
         ${LIB_ROOT}/middlewares/usb_drivers/src/usbd_core.c
         ${LIB_ROOT}/middlewares/usb_drivers/src/usbd_int.c
         ${LIB_ROOT}/middlewares/usb_drivers/src/usbd_sdr.c
-
-        ${LIB_ROOT}/middlewares/usbd_class/composite_cdc_keyboard/cdc_keyboard_class.c
-        ${LIB_ROOT}/middlewares/usbd_class/composite_cdc_keyboard/cdc_keyboard_desc.c
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
         core/inc
         core/usb
+        core/usb/composite_cdc_keyboard
 
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support
         ${LIB_ROOT}/libraries/cmsis/cm4/core_support
@@ -66,5 +68,4 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${LIB_ROOT}/project/at_start_f405/templates/inc
 
         ${LIB_ROOT}/middlewares/usb_drivers/inc
-        ${LIB_ROOT}/middlewares/usbd_class/composite_cdc_keyboard
 )

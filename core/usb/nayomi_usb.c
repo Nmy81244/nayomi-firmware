@@ -6,7 +6,7 @@
 #include "cdc_keyboard_class.h"
 #include "cdc_keyboard_desc.h"
 
-static otg_core_type otg_core_struct;
+otg_core_type nayomi_otg_core_instance;
 
 static uint32_t fac_us;
 
@@ -96,7 +96,7 @@ void nayomi_usb_init(void)
     nvic_irq_enable(OTG_IRQ, 0, 0);
 
     usbd_init(
-        &otg_core_struct,
+        &nayomi_otg_core_instance,
         USB_SPEED_CORE_ID,
         USB_ID,
         &cdc_keyboard_class_handler,
@@ -106,7 +106,7 @@ void nayomi_usb_init(void)
 
 int nayomi_usb_is_configured(void)
 {
-    return usbd_connect_state_get(&otg_core_struct.dev) ==
+    return usbd_connect_state_get(&nayomi_otg_core_instance.dev) ==
            USB_CONN_STATE_CONFIGURED;
 }
 
@@ -116,7 +116,7 @@ uint16_t nayomi_usb_cdc_read(uint8_t *buffer, uint16_t buffer_size)
         return 0;
 
     uint16_t available = usb_vcpkybrd_vcp_get_rxdata(
-        &otg_core_struct.dev,
+        &nayomi_otg_core_instance.dev,
         buffer
     );
 
@@ -132,8 +132,8 @@ int nayomi_usb_cdc_write(const uint8_t *buffer, uint16_t length)
         return 0;
 
     return usb_vcpkybrd_vcp_send_data(
-        &otg_core_struct.dev,
-        const_cast<uint8_t *>(buffer),
+        &nayomi_otg_core_instance.dev,
+        (uint8_t *)buffer,
         length
     ) == SUCCESS;
 }
@@ -149,10 +149,9 @@ int nayomi_usb_keyboard_send_report(const uint8_t *report, uint16_t length)
         return 0;
 
     return usb_vcpkybrd_class_send_report(
-        &otg_core_struct.dev,
-        const_cast<uint8_t *>(report),
+        &nayomi_otg_core_instance.dev,
+        (uint8_t *)report,
         length
     ) == USB_OK;
 }
 
-extern void OTGHS_IRQHandler(void);

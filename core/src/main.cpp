@@ -120,7 +120,7 @@ static void cli_key_test(void)
     {
     }
 
-    usb_delay_ms(10);
+    nayomi_usb_delay_ms(10);
 
     while(nayomi_usb_is_configured() &&
           !nayomi_usb_keyboard_send_report(key_release, sizeof(key_release)))
@@ -170,7 +170,7 @@ static void cli_process_command(char *command)
     if(std::strcmp(command, "reset") == 0)
     {
         cli_write("resetting...\r\n");
-        usb_delay_ms(10);
+        nayomi_usb_delay_ms(10);
         NVIC_SystemReset();
     }
 
