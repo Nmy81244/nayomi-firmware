@@ -139,7 +139,7 @@ void Decoder::feed(const uint8_t *data, std::size_t length)
                     else if(current_.length == 0)
                     {
                         crc_pos_ = 0;
-                        state_ = State::CRC;
+                        state_ = State::READ_CRC;
                     }
                     else
                     {
