@@ -1,76 +1,146 @@
 #include "ssd1306.h"
 #include "board_pinout.h"
 
-static i2c_handle_type oled_i2c;
+namespace
+{
+    constexpr uint32_t I2C_TIMEOUT = 100000;
 
-static constexpr uint32_t I2C_TIMEOUT = 0xFFFFFFF;
+    /*
+     * 128 x 32 / 8 = 512 bytes.
+     *
+     * SSD1306 memory is arranged as four pages of 128 bytes.
+     */
+    uint8_t framebuffer[SSD1306_WIDTH * SSD1306_PAGES] = {};
+
+    i2c_handle_type oled_i2c;
+
+    /*
+     * SSD1306 command helpers
+     */
+
+    i2c_status_type oled_write(
+        const uint8_t *data,
+        uint16_t size
+    )
+    {
+        return i2c_master_transmit(
+            &oled_i2c,
+            SSD1306_I2C_ADDRESS,
+            const_cast<uint8_t *>(data),
+            size,
+            I2C_TIMEOUT
+        );
+    }
+
+    i2c_status_type ssd1306_command(uint8_t command)
+    {
+        const uint8_t packet[] =
+        {
+            0x00,       // Co = 0, D/C# = 0: command
+            command
+        };
+
+        return oled_write(packet, sizeof(packet));
+    }
+
+    i2c_status_type ssd1306_command2(
+        uint8_t command,
+        uint8_t value
+    )
+    {
+        const uint8_t packet[] =
+        {
+            0x00,
+            command,
+            value
+        };
+
+        return oled_write(packet, sizeof(packet));
+    }
+
+    i2c_status_type ssd1306_set_page(uint8_t page)
+    {
+        if (page >= SSD1306_PAGES)
+            return I2C_ERR_STEP_1;
+
+        /*
+         * Page addressing mode:
+         *
+         * 0xB0..0xB3 = page
+         * 0x00        = lower column nibble
+         * 0x10        = upper column nibble
+         */
+        const uint8_t packet[] =
+        {
+            0x00,
+            static_cast<uint8_t>(0xB0 | page),
+            0x00,
+            0x10
+        };
+
+        return oled_write(packet, sizeof(packet));
+    }
+
+    i2c_status_type ssd1306_write_page(
+        uint8_t page,
+        const uint8_t *data
+    )
+    {
+        i2c_status_type status = ssd1306_set_page(page);
+
+        if (status != I2C_OK)
+            return status;
+
+        /*
+         * 0x40 = Co=0, D/C#=1:
+         * following bytes are display RAM data.
+         *
+         * 128 bytes of pixel data.
+         */
+        uint8_t packet[129];
+
+        packet[0] = 0x40;
+
+        for (uint16_t x = 0; x < SSD1306_WIDTH; ++x)
+            packet[x + 1] = data[x];
+
+        return oled_write(packet, sizeof(packet));
+    }
+}
 
 /*
- * Artery's I2C application library expects the slave address
- * in the shifted form:
+ * Artery I2C application library calls this weak function
+ * from i2c_config().
  *
- * SSD1306 datasheet/module address = 0x3C
- * Artery transfer address          = 0x78
+ * The board layer handles the GPIO clocks/mux configuration.
+ * This function only initializes the I2C peripheral itself.
  */
-
 extern "C" void i2c_lowlevel_init(i2c_handle_type *hi2c)
 {
-    gpio_init_type gpio_init_struct;
+    if (hi2c == nullptr)
+        return;
 
     if (hi2c->i2cx != OLED_I2C_PORT)
         return;
 
-    /* Enable clocks */
-    crm_periph_clock_enable(OLED_I2C_CRM_CLK, TRUE);
-    crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
-
-    /* PB6 -> I2C1_SCL */
-    gpio_pin_mux_config(
-        OLED_SCL_PORT,
-        OLED_SCL_SOURCE,
-        OLED_I2C_MUX
-    );
-
-    /* PB7 -> I2C1_SDA */
-    gpio_pin_mux_config(
-        OLED_SDA_PORT,
-        OLED_SDA_SOURCE,
-        OLED_I2C_MUX
-    );
-
     /*
-     * I2C pins:
-     * MUX + open drain.
-     */
-    gpio_default_para_init(&gpio_init_struct);
-
-    gpio_init_struct.gpio_mode           = GPIO_MODE_MUX;
-    gpio_init_struct.gpio_out_type       = GPIO_OUTPUT_OPEN_DRAIN;
-    gpio_init_struct.gpio_pull           = GPIO_PULL_NONE;
-    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-
-    gpio_init_struct.gpio_pins = OLED_SCL_PIN;
-    gpio_init(OLED_SCL_PORT, &gpio_init_struct);
-
-    gpio_init_struct.gpio_pins = OLED_SDA_PIN;
-    gpio_init(OLED_SDA_PORT, &gpio_init_struct);
-
-    /*
-     * Start conservatively at the 10 kHz timing value
-     * from Artery's official I2C example.
+     * Official Artery F405 examples:
      *
-     * Once the display works, we can move this to 100 kHz.
+     *   digital filter = 0x0F
+     *   100 kHz clock  = 0x90F03030
+     *
+     * This assumes the official 216 MHz system clock
+     * configuration is active.
      */
     i2c_init(
         hi2c->i2cx,
         0x0F,
-        0x4170FEFE
+        0x90F03030
     );
 
     /*
-     * This is the MCU's own address.
-     * It doesn't matter for our master-only OLED use,
-     * but the Artery middleware initializes it this way.
+     * Own address is irrelevant for our master-only OLED use,
+     * but the Artery middleware expects normal I2C configuration.
      */
     i2c_own_address1_set(
         hi2c->i2cx,
@@ -79,137 +149,191 @@ extern "C" void i2c_lowlevel_init(i2c_handle_type *hi2c)
     );
 }
 
-static i2c_status_type oled_write(
-    const uint8_t *data,
-    uint16_t size
-)
-{
-    return i2c_master_transmit(
-        &oled_i2c,
-        OLED_I2C_ADDRESS,
-        const_cast<uint8_t *>(data),
-        size,
-        I2C_TIMEOUT
-    );
-}
-
-static i2c_status_type ssd1306_command(
-    uint8_t command
-)
-{
-    const uint8_t packet[] = {
-        0x00,
-        command
-    };
-
-    return oled_write(packet, sizeof(packet));
-}
-
-static i2c_status_type ssd1306_command2(
-    uint8_t command,
-    uint8_t value
-)
-{
-    const uint8_t packet[] = {
-        0x00,
-        command,
-        value
-    };
-
-    return oled_write(packet, sizeof(packet));
-}
-
-static i2c_status_type ssd1306_set_page(
-    uint8_t page
-)
-{
-    const uint8_t packet[] = {
-        0x00,
-        static_cast<uint8_t>(0xB0 | page),
-        0x00,
-        0x10
-    };
-
-    return oled_write(packet, sizeof(packet));
-}
-
-static i2c_status_type ssd1306_write_page(
-    const uint8_t *data
-)
-{
-    uint8_t packet[129];
-
-    packet[0] = 0x40;
-
-    for (uint8_t i = 0; i < 128; ++i)
-        packet[i + 1] = data[i];
-
-    return oled_write(packet, sizeof(packet));
-}
-
-void ssd1306_init(void)
+extern "C" i2c_status_type ssd1306_init(void)
 {
     oled_i2c.i2cx = OLED_I2C_PORT;
 
-    /* Configure I2C1 + PB6/PB7 */
+    /*
+     * This performs the peripheral reset, low-level initialization,
+     * and I2C peripheral enable through Artery's middleware.
+     */
     i2c_config(&oled_i2c);
 
+    i2c_status_type status;
+
     /*
-     * SSD1306 initialization for 128x32.
+     * SSD1306 initialization sequence for 128x32.
      */
-    ssd1306_command(0xAE);           // Display OFF
-    ssd1306_command2(0xD5, 0x80);    // Display clock
-    ssd1306_command2(0xA8, 0x1F);    // Multiplex = 32
-    ssd1306_command2(0xD3, 0x00);    // Display offset
-    ssd1306_command(0x40);           // Start line = 0
 
-    ssd1306_command2(0x8D, 0x14);    // Charge pump ON
+    status = ssd1306_command(0xAE);       // Display OFF
+    if (status != I2C_OK)
+        return status;
 
-    ssd1306_command2(0x20, 0x00);    // Horizontal addressing
+    status = ssd1306_command2(0xD5, 0x80); // Display clock divide/oscillator
+    if (status != I2C_OK)
+        return status;
 
-    ssd1306_command(0xA1);           // Segment remap
-    ssd1306_command(0xC8);           // COM scan direction
+    status = ssd1306_command2(0xA8, 0x1F); // Multiplex ratio = 31 -> 32 rows
+    if (status != I2C_OK)
+        return status;
 
-    ssd1306_command2(0xDA, 0x02);    // COM pins for 128x32
+    status = ssd1306_command2(0xD3, 0x00); // Display offset = 0
+    if (status != I2C_OK)
+        return status;
 
-    ssd1306_command2(0x81, 0x8F);    // Contrast
-    ssd1306_command2(0xD9, 0xF1);    // Pre-charge
-    ssd1306_command2(0xDB, 0x40);    // VCOMH
+    status = ssd1306_command(0x40);       // Display start line = 0
+    if (status != I2C_OK)
+        return status;
 
-    ssd1306_command(0xA4);           // Display follows RAM
-    ssd1306_command(0xA6);           // Normal display
+    /*
+     * Internal charge pump.
+     */
+    status = ssd1306_command2(0x8D, 0x14);
+    if (status != I2C_OK)
+        return status;
 
-    ssd1306_command(0xAF);           // Display ON
+    /*
+     * Page addressing mode.
+     *
+     * This is important because our framebuffer is written
+     * one SSD1306 page at a time.
+     */
+    status = ssd1306_command2(0x20, 0x02);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * Segment remap.
+     *
+     * Makes column 127 appear at the first physical segment.
+     */
+    status = ssd1306_command(0xA1);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * COM output scan direction.
+     */
+    status = ssd1306_command(0xC8);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * 128x32 uses the alternative COM pin configuration.
+     */
+    status = ssd1306_command2(0xDA, 0x02);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * Contrast.
+     */
+    status = ssd1306_command2(0x81, 0x8F);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * Pre-charge period.
+     */
+    status = ssd1306_command2(0xD9, 0xF1);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * VCOMH deselect level.
+     */
+    status = ssd1306_command2(0xDB, 0x40);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * Resume displaying RAM contents.
+     */
+    status = ssd1306_command(0xA4);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * Normal display mode.
+     */
+    status = ssd1306_command(0xA6);
+    if (status != I2C_OK)
+        return status;
+
+    /*
+     * Clear the framebuffer before turning the display on.
+     */
+    for (uint16_t i = 0; i < sizeof(framebuffer); ++i)
+        framebuffer[i] = 0;
+
+    status = ssd1306_command(0xAF);       // Display ON
+    if (status != I2C_OK)
+        return status;
+
+    return I2C_OK;
 }
 
-i2c_status_type ssd1306_test_pattern(void)
+extern "C" void ssd1306_set_pixel(
+    uint8_t x,
+    uint8_t y,
+    uint8_t on
+)
 {
-    uint8_t line[128];
+    if (x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT)
+        return;
 
-    /*
-     * Four pages on a 128x32 display.
-     *
-     * Alternating pages of 0xAA / 0x55 creates a very
-     * obvious pattern if the display is actually alive.
-     */
-    for (uint8_t page = 0; page < 4; ++page)
+    const uint16_t index =
+        static_cast<uint16_t>(y / 8) * SSD1306_WIDTH + x;
+
+    const uint8_t mask =
+        static_cast<uint8_t>(1U << (y & 7));
+
+    if (on != 0)
+        framebuffer[index] |= mask;
+    else
+        framebuffer[index] &= static_cast<uint8_t>(~mask);
+}
+
+extern "C" i2c_status_type ssd1306_flush(void)
+{
+    for (uint8_t page = 0; page < SSD1306_PAGES; ++page)
     {
-        if (ssd1306_set_page(page) != I2C_OK)
-            return I2C_ERR_STEP_1;
+        const uint8_t *page_data =
+            &framebuffer[page * SSD1306_WIDTH];
 
-        for (uint8_t x = 0; x < 128; ++x)
-        {
-            if (page & 1)
-                line[x] = 0x55;
-            else
-                line[x] = 0xAA;
-        }
-
-        i2c_status_type status = ssd1306_write_page(line);
+        i2c_status_type status =
+            ssd1306_write_page(page, page_data);
 
         if (status != I2C_OK)
             return status;
     }
 
     return I2C_OK;
+}
+
+extern "C" i2c_status_type ssd1306_clear(void)
+{
+    for (uint16_t i = 0; i < sizeof(framebuffer); ++i)
+        framebuffer[i] = 0;
+
+    return ssd1306_flush();
+}
+
+extern "C" i2c_status_type ssd1306_fill(uint8_t value)
+{
+    for (uint16_t i = 0; i < sizeof(framebuffer); ++i)
+        framebuffer[i] = value;
+
+    return ssd1306_flush();
+}
+
+i2c_status_type ssd1306_test_pattern(void)
+{
+    /*
+     * Force the entire display ON.
+     *
+     * 0xA5 = Entire Display ON
+     * This bypasses display RAM completely.
+     */
+    return ssd1306_command(0xA5);
 }

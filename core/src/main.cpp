@@ -1,36 +1,106 @@
 #include <at32f402_405.h>
 
 #include "board_pinout.h"
-#include "ssd1306.h"
 
-int main()
+volatile uint16_t hall_raw = 0;
+volatile uint32_t hall_millivolts = 0;
+
+static void hall_adc_init(void)
+{
+    adc_base_config_type adc_base_struct;
+
+    /* ADC peripheral clock */
+    crm_periph_clock_enable(HALL_1_ADC_CRM_CLK, TRUE);
+
+    /*
+     * HCLK / 8
+     * At 216 MHz HCLK this gives 27 MHz ADC clock,
+     * which is within the ADC clock limit.
+     */
+    adc_clock_div_set(ADC_DIV_8);
+
+    /* Basic ADC configuration */
+    adc_base_default_para_init(&adc_base_struct);
+
+    adc_base_struct.sequence_mode           = FALSE;
+    adc_base_struct.repeat_mode             = FALSE;
+    adc_base_struct.data_align              = ADC_RIGHT_ALIGNMENT;
+    adc_base_struct.ordinary_channel_length = 1;
+
+    adc_base_config(HALL_1_ADC, &adc_base_struct);
+
+    /* PA0 = ADC channel 0 */
+    adc_ordinary_channel_set(
+        HALL_1_ADC,
+        HALL_1_ADC_CHANNEL,
+        1,
+        ADC_SAMPLETIME_239_5
+    );
+
+    /* Software-triggered conversion */
+    adc_ordinary_conversion_trigger_set(
+        HALL_1_ADC,
+        ADC12_ORDINARY_TRIG_SOFTWARE,
+        TRUE
+    );
+
+    /* Enable ADC */
+    adc_enable(HALL_1_ADC, TRUE);
+
+    /* ADC calibration */
+    adc_calibration_init(HALL_1_ADC);
+
+    while(adc_calibration_init_status_get(HALL_1_ADC) != RESET)
+    {
+    }
+
+    adc_calibration_start(HALL_1_ADC);
+
+    while(adc_calibration_status_get(HALL_1_ADC) != RESET)
+    {
+    }
+}
+
+static uint16_t hall_read(void)
+{
+    /* Start one conversion */
+    adc_ordinary_software_trigger_enable(
+        HALL_1_ADC,
+        TRUE
+    );
+
+    /* Wait for conversion complete */
+    while(adc_flag_get(HALL_1_ADC, ADC_CCE_FLAG) == RESET)
+    {
+    }
+
+    /* Read result */
+    uint16_t value =
+        adc_ordinary_conversion_data_get(HALL_1_ADC);
+
+    /* Clear completion flag */
+    adc_flag_clear(HALL_1_ADC, ADC_CCE_FLAG);
+
+    return value;
+}
+
+int main(void)
 {
     board_pinout_init();
 
-    ssd1306_init();
+    hall_adc_init();
 
-    i2c_status_type status = ssd1306_test_pattern();
-
-    if (status != I2C_OK)
+    while(true)
     {
+        hall_raw = hall_read();
+
         /*
-         * I2C/OLED failure:
-         * turn LED on permanently.
+         * Assuming the ADC reference/input range is 0–3.3 V:
+         *
+         * 0     = 0 V
+         * 4095  = 3.3 V
          */
-        gpio_bits_set(LED_GPIO_PORT, LED_PIN);
-
-        while (true)
-        {
-        }
-    }
-
-    /*
-     * OLED succeeded.
-     * Turn LED off and leave the test pattern displayed.
-     */
-    gpio_bits_reset(LED_GPIO_PORT, LED_PIN);
-
-    while (true)
-    {
+        hall_millivolts =
+            ((uint32_t)hall_raw * 3300U) / 4095U;
     }
 }

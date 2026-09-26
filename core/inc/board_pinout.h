@@ -7,15 +7,18 @@
 extern "C" {
 #endif
 
-/* Pin Mappings */
+/* On-board status LED */
 #define LED_PIN                     GPIO_PINS_13
 #define LED_GPIO_PORT               GPIOC
 #define LED_CRM_CLK                 CRM_GPIOC_PERIPH_CLOCK
 
-#define BUTTON_PIN                  GPIO_PINS_0
-#define BUTTON_GPIO_PORT            GPIOA
-#define BUTTON_CRM_CLK              CRM_GPIOA_PERIPH_CLOCK
+#define LED_ON() \
+    gpio_bits_reset(LED_GPIO_PORT, LED_PIN)
 
+#define LED_OFF() \
+    gpio_bits_set(LED_GPIO_PORT, LED_PIN)
+
+/* OLED: SSD1306, I2C1 */
 #define OLED_I2C_PORT               I2C1
 #define OLED_I2C_CRM_CLK            CRM_I2C1_PERIPH_CLOCK
 
@@ -30,11 +33,17 @@ extern "C" {
 
 #define OLED_I2C_MUX                GPIO_MUX_4
 
+/* SSD1306 7-bit address 0x3C, shifted for Artery's I2C API */
 #define OLED_I2C_ADDRESS            0x78
 
-/**
- * @brief Initialize all mapped GPIO pins and their peripheral clocks.
- */
+#define HALL_1_PIN               GPIO_PINS_0
+#define HALL_1_GPIO_PORT         GPIOA
+#define HALL_1_GPIO_CRM_CLK      CRM_GPIOA_PERIPH_CLOCK
+
+#define HALL_1_ADC               ADC1
+#define HALL_1_ADC_CHANNEL       ADC_CHANNEL_0
+#define HALL_1_ADC_CRM_CLK       CRM_ADC1_PERIPH_CLOCK
+
 void board_pinout_init(void);
 
 #ifdef __cplusplus
