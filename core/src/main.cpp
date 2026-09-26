@@ -284,7 +284,6 @@ static uint16_t cli_line_length = 0;
 static bool cli_ignore_lf_after_cr = false;
 static nayomi_protocol::Decoder protocol_decoder;
 static uint8_t protocol_tx_sequence = 0;
-static uint32_t telemetry_divider = 0;
 
 static void cli_reset_input_state(void)
 {
@@ -384,6 +383,5 @@ int main(void)
 
         protocol_task();
         protocol_telemetry_task();
-        cli_task();
     }
 }
