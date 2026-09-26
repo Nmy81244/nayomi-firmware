@@ -383,5 +383,6 @@ int main(void)
 
         protocol_task();
         protocol_telemetry_task();
+        nayomi_usb_delay_ms(1);
     }
 }
