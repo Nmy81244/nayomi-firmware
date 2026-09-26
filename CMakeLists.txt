@@ -31,6 +31,7 @@ target_link_options(${PROJECT_NAME} PRIVATE
 target_sources(${PROJECT_NAME} PRIVATE
         core/src/main.cpp
         core/src/nayomi_protocol.cpp
+        core/src/nayomi_input.cpp
         core/src/board_pinout.cpp
         core/usb/nayomi_usb.c
         core/usb/nayomi_usb_int.c
