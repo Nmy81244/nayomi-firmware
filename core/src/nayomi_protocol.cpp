@@ -168,7 +168,6 @@ void Decoder::feed(const uint8_t *data, std::size_t length)
                         static_cast<uint16_t>(crc_bytes_[0]) |
                         static_cast<uint16_t>(crc_bytes_[1] << 8);
 
-                    const uint8_t crc_input_offset = 0;
                     uint8_t crc_input[5 + kMaxPayload] = {};
 
                     crc_input[0] = current_.version;
@@ -188,7 +187,7 @@ void Decoder::feed(const uint8_t *data, std::size_t length)
 
                     const uint16_t computed_crc =
                         crc16_ccitt(
-                            &crc_input[crc_input_offset],
+                            crc_input,
                             static_cast<std::size_t>(5 + current_.length)
                         );
 
