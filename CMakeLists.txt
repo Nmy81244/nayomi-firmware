@@ -3,8 +3,7 @@ project(nayomi-firmware.elf C CXX ASM)     # ASM must be enabled explicitly or t
 
 set(LIB_ROOT ${CMAKE_SOURCE_DIR}/libraries/AT32F402_405_Firmware_Library)
 
-add_executable(${PROJECT_NAME}
-        core/src/ssd1306.cpp)
+add_executable(${PROJECT_NAME})
 
 target_link_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
@@ -24,21 +23,27 @@ target_sources(${PROJECT_NAME} PRIVATE
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support/system_at32f402_405.c
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support/startup/gcc/startup_at32f402_405.s
 
+        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_acc.c
         ${LIB_ROOT}/libraries/drivers/src/at32f402_405_crm.c
         ${LIB_ROOT}/libraries/drivers/src/at32f402_405_gpio.c
-        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_adc.c
-        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_i2c.c
-        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_dma.c
+        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_misc.c
+        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_pwc.c
+        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_scfg.c
+        ${LIB_ROOT}/libraries/drivers/src/at32f402_405_usb.c
 
-        ${LIB_ROOT}/middlewares/i2c_application_library/i2c_application.c
+        ${LIB_ROOT}/middlewares/usb_drivers/src/usb_core.c
+        ${LIB_ROOT}/middlewares/usb_drivers/src/usbd_core.c
+        ${LIB_ROOT}/middlewares/usb_drivers/src/usbd_int.c
+        ${LIB_ROOT}/middlewares/usb_drivers/src/usbd_sdr.c
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
         core/inc
+        core/usb
 
         ${LIB_ROOT}/libraries/cmsis/cm4/device_support
         ${LIB_ROOT}/libraries/cmsis/cm4/core_support
         ${LIB_ROOT}/libraries/drivers/inc
         ${LIB_ROOT}/project/at_start_f405/templates/inc
-        ${LIB_ROOT}/middlewares/i2c_application_library
+        ${LIB_ROOT}/middlewares/usb_drivers/inc
 )

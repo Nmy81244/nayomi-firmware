@@ -1,0 +1,8 @@
+//
+// Created by naomy on 9/25/26.
+//
+
+#ifndef NAYOMI_FIRMWARE_ELF_KEYBOARD_H
+#define NAYOMI_FIRMWARE_ELF_KEYBOARD_H
+
+#endif //NAYOMI_FIRMWARE_ELF_KEYBOARD_H

@@ -1,0 +1,8 @@
+//
+// Created by naomy on 9/25/26.
+//
+
+#ifndef NAYOMI_FIRMWARE_ELF_USB_DEVICE_H
+#define NAYOMI_FIRMWARE_ELF_USB_DEVICE_H
+
+#endif //NAYOMI_FIRMWARE_ELF_USB_DEVICE_H
