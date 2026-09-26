@@ -123,7 +123,19 @@ class Nayomi:
     def send(self, msg_type, payload=b""):
         seq = self.sequence
         self.sequence = (self.sequence + 1) & 0xFF
-        os.write(self.fd, frame(msg_type, seq, payload))
+        packet = frame(msg_type, seq, payload)
+        offset = 0
+
+        while offset < len(packet):
+            try:
+                written = os.write(self.fd, packet[offset:])
+                if written > 0:
+                    offset += written
+            except BlockingIOError:
+                _, writable, _ = select.select([], [self.fd], [], 1.0)
+                if not writable:
+                    raise TimeoutError("timed out writing to Nayomi")
+
         return seq
 
     def receive(self, timeout=1.0):
@@ -208,7 +220,7 @@ def monitor(dev):
                     # Status counters are refreshed independently; keep the
                     # live line useful even if the status response is delayed.
                     print(
-                        f"\\rHall 1: {raw:4d} raw / {mv:4d} mV"
+                        f"\r\x1b[KHall 1: {raw:4d} raw / {mv:4d} mV"
                         f"   telemetry: {rate:5.1f} Hz",
                         end="",
                         flush=True,
@@ -218,10 +230,10 @@ def monitor(dev):
                     usb = "ON" if payload[4] else "OFF"
                     frames, crc_errors, malformed = struct.unpack_from("<III", payload, 5)
                     print(
-                        f"\\rHall 1: {raw:4d} raw / {mv:4d} mV"
+                        f"\r\x1b[KHall 1: {raw:4d} raw / {mv:4d} mV"
                         f"   USB: {usb}   RX: {frames}"
                         f"   CRC: {crc_errors}   bad: {malformed}"
-                        f"   telemetry: {rate:5.1f} Hz   ",
+                        f"   telemetry: {rate:5.1f} Hz",
                         end="",
                         flush=True,
                     )
