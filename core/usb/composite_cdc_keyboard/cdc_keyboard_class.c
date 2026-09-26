@@ -233,7 +233,14 @@ static usb_sts_type class_init_handler(void *udev)
   
   vcpkybrd->g_rx_buff = (uint8_t *)g_cdc_rx_buffer;
   vcpkybrd->g_cmd = (uint8_t *)g_cdc_cmd_buffer;
-  
+
+  /* Reset per-connection state. The class data survives USB disconnects,
+   * so stale RX state must not become a phantom first CLI command. */
+  vcpkybrd->g_rx_completed = 0;
+  vcpkybrd->g_rxlen = 0;
+  vcpkybrd->g_tx_completed = 1;
+  vcpkybrd->g_keyboard_tx_completed = 1;
+
   if(pudev->speed == USB_HIGH_SPEED)
   {
     vcpkybrd->maxpacket = USBD_HS_VCPKYBRD_MAXPACKET_SIZE;
@@ -263,9 +270,6 @@ static usb_sts_type class_init_handler(void *udev)
   /* set out endpoint to receive status */
   usbd_ept_recv(pudev, USBD_VCPKYBRD_CDC_BULK_OUT_EPT, vcpkybrd->g_rx_buff, USBD_VCPKYBRD_OUT_MAXPACKET_SIZE);
 
-  vcpkybrd->g_tx_completed = 1;
-  vcpkybrd->g_keyboard_tx_completed = 1;
-
   vcpkybrd->linecoding.bitrate = linecoding_vcpkybrd.bitrate;
   vcpkybrd->linecoding.data = linecoding_vcpkybrd.data;
   vcpkybrd->linecoding.format = linecoding_vcpkybrd.format;
@@ -294,6 +298,10 @@ static usb_sts_type class_clear_handler(void *udev)
 
   /* close in endpoint */
   usbd_ept_close(pudev, USBD_VCPKYBRD_HID_IN_EPT);
+
+  /* Drop any packet state from the previous configuration. */
+  vcpkybrd->g_rx_completed = 0;
+  vcpkybrd->g_rxlen = 0;
 
   return status;
 }
