@@ -25,7 +25,6 @@
 #include "usbd_core.h"
 #include "cdc_keyboard_class.h"
 #include "cdc_keyboard_desc.h"
-#include "nayomi_input.h"
 
 /** @addtogroup AT32F402_405_middlewares_usbd_class
   * @{
@@ -582,7 +581,6 @@ static usb_sts_type class_sof_handler(void *udev)
   usb_sts_type status = USB_OK;
 
   (void)udev;
-  nayomi_input_sof();
 
   return status;
 }
