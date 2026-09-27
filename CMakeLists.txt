@@ -3,6 +3,39 @@ project(nayomi-firmware.elf C CXX ASM)
 
 set(LIB_ROOT ${CMAKE_SOURCE_DIR}/libraries/AT32F402_405_Firmware_Library)
 
+# Embed the exact source revision in every firmware image.
+execute_process(
+        COMMAND git rev-parse --short=8 HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE NAYOMI_GIT_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+)
+if(NOT NAYOMI_GIT_SHA)
+    set(NAYOMI_GIT_SHA "unknown")
+endif()
+
+execute_process(
+        COMMAND git status --porcelain
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE NAYOMI_GIT_STATUS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+)
+if(NAYOMI_GIT_STATUS)
+    set(NAYOMI_GIT_VERSION "${NAYOMI_GIT_SHA}-dirty")
+else()
+    set(NAYOMI_GIT_VERSION "${NAYOMI_GIT_SHA}")
+endif()
+
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
+configure_file(
+        ${CMAKE_SOURCE_DIR}/core/inc/nayomi_version.h.in
+        ${CMAKE_BINARY_DIR}/generated/nayomi_version.h
+        @ONLY
+)
+
+
 add_executable(${PROJECT_NAME})
 
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -61,6 +94,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
         core/inc
+        ${CMAKE_BINARY_DIR}/generated
         core/usb
         core/usb/composite_cdc_keyboard
 
