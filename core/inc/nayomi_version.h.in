@@ -1,0 +1,6 @@
+#ifndef NAYOMI_VERSION_H
+#define NAYOMI_VERSION_H
+
+#define NAYOMI_GIT_VERSION "@NAYOMI_GIT_VERSION@"
+
+#endif
