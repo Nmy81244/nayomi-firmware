@@ -20,7 +20,6 @@ namespace
  * No assumption is made about which direction means "pressed".
  */
 constexpr uint16_t DIRECTION_LOCK_DISTANCE = 128;
-constexpr uint8_t  DIRECTION_LOCK_SAMPLES  = 8;
 
 constexpr uint16_t ACTUATION_TRAVEL = 500; // 50% of learned travel
 constexpr uint16_t RT_PRESS_TRAVEL  = 50;  // 5%
@@ -35,9 +34,6 @@ struct KeyState
     bool initialized = false;
     bool direction_locked = false;
     bool pressed_toward_low = false;
-
-    uint8_t low_direction_samples = 0;
-    uint8_t high_direction_samples = 0;
 
     bool pressed = false;
     uint16_t peak_travel = 0;
@@ -113,34 +109,13 @@ void update_calibration(uint16_t raw)
 
     if(delta <= -static_cast<int32_t>(DIRECTION_LOCK_DISTANCE))
     {
-        if(key1.low_direction_samples < DIRECTION_LOCK_SAMPLES)
-            ++key1.low_direction_samples;
-
-        key1.high_direction_samples = 0;
-
-        if(key1.low_direction_samples >= DIRECTION_LOCK_SAMPLES)
-        {
-            key1.direction_locked = true;
-            key1.pressed_toward_low = true;
-        }
+        key1.direction_locked = true;
+        key1.pressed_toward_low = true;
     }
     else if(delta >= static_cast<int32_t>(DIRECTION_LOCK_DISTANCE))
     {
-        if(key1.high_direction_samples < DIRECTION_LOCK_SAMPLES)
-            ++key1.high_direction_samples;
-
-        key1.low_direction_samples = 0;
-
-        if(key1.high_direction_samples >= DIRECTION_LOCK_SAMPLES)
-        {
-            key1.direction_locked = true;
-            key1.pressed_toward_low = false;
-        }
-    }
-    else
-    {
-        key1.low_direction_samples = 0;
-        key1.high_direction_samples = 0;
+        key1.direction_locked = true;
+        key1.pressed_toward_low = false;
     }
 }
 
@@ -261,9 +236,6 @@ extern "C" void nayomi_input_sof(void)
     const uint16_t travel = raw_to_travel(hall_raw);
     update_key(travel);
 
-    /*
-     * The HS HID endpoint is polled every 125 us. Send the current keyboard
-     * state on each microframe whenever the previous transfer has completed.
-     */
+    /* Send the current keyboard state when the HID endpoint is ready. */
     nayomi_usb_keyboard_send_report(keyboard_report, sizeof(keyboard_report));
 }
