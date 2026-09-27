@@ -8,6 +8,7 @@
 #include "nayomi_usb.h"
 #include "nayomi_protocol.h"
 #include "nayomi_input.h"
+#include "nayomi_version.h"
 
 volatile uint16_t hall_raw = 0;
 volatile uint32_t hall_millivolts = 0;
@@ -213,6 +214,7 @@ static void cli_process_command(char *command)
             "MCU: AT32F405CCT7\r\n"
             "USB: High-Speed composite HID + CDC\r\n"
             "Keyboard HID interval: 125 us\r\n"
+            "Version: " NAYOMI_GIT_VERSION "\r\n"
         );
         return;
     }
@@ -374,12 +376,17 @@ static void protocol_handle(const nayomi_protocol::Frame &frame)
             const uint16_t api = 1;
             const char *mcu = "AT32F405CCT7";
             const char *product = "Nayomi Keypad";
+            const char *version = NAYOMI_GIT_VERSION;
             std::memcpy(payload, &api, sizeof(api));
             std::memcpy(payload + 2, mcu, std::strlen(mcu) + 1);
             std::memcpy(payload + 2 + std::strlen(mcu) + 1,
                         product, std::strlen(product) + 1);
+            const size_t version_offset =
+                2 + std::strlen(mcu) + 1 + std::strlen(product) + 1;
+            std::memcpy(payload + version_offset,
+                        version, std::strlen(version) + 1);
             length = static_cast<uint16_t>(
-                2 + std::strlen(mcu) + 1 + std::strlen(product) + 1);
+                version_offset + std::strlen(version) + 1);
             protocol_send(nayomi_protocol::RSP_MASK | frame.type,
                           frame.sequence, payload, length);
             break;
