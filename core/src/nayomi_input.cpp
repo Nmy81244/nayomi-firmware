@@ -10,15 +10,35 @@ extern volatile uint32_t hall_millivolts;
 
 namespace
 {
-constexpr uint16_t KEY_RELEASED_RAW = 1700;
-constexpr uint16_t KEY_PRESSED_RAW  = 25;
+/*
+ * Calibration is deliberately runtime-only for now.
+ *
+ * Each key starts with both endpoints at its first observed Hall reading.
+ * New extremes pull the corresponding endpoint outward. The pull is stronger
+ * when the new sample is farther outside the current calibration envelope.
+ *
+ * No assumption is made about which direction means "pressed".
+ */
+constexpr uint16_t DIRECTION_LOCK_DISTANCE = 128;
+constexpr uint8_t  DIRECTION_LOCK_SAMPLES  = 8;
 
-constexpr uint16_t ACTUATION_TRAVEL = 500; // 50% travel
-constexpr uint16_t RT_PRESS_TRAVEL  = 50;  // 5% travel
-constexpr uint16_t RT_RELEASE_TRAVEL = 50; // 5% travel
+constexpr uint16_t ACTUATION_TRAVEL = 500; // 50% of learned travel
+constexpr uint16_t RT_PRESS_TRAVEL  = 50;  // 5%
+constexpr uint16_t RT_RELEASE_TRAVEL = 50; // 5%
 
 struct KeyState
 {
+    uint16_t low = 0;
+    uint16_t high = 0;
+    uint16_t boot_raw = 0;
+
+    bool initialized = false;
+    bool direction_locked = false;
+    bool pressed_toward_low = false;
+
+    uint8_t low_direction_samples = 0;
+    uint8_t high_direction_samples = 0;
+
     bool pressed = false;
     uint16_t peak_travel = 0;
     uint16_t release_reference = 0;
@@ -31,33 +51,124 @@ uint16_t clamp_travel(int32_t travel)
 {
     if(travel < 0)
         return 0;
+
     if(travel > 1000)
         return 1000;
+
     return static_cast<uint16_t>(travel);
 }
 
 /*
- * Travel is defined semantically as:
- *   0    = released endpoint
- *   1000 = pressed endpoint
+ * Move an endpoint toward a newly observed extreme.
  *
- * The raw endpoints may be in either order, so the input algorithm never
- * assumes that pressing the key makes the ADC value increase or decrease.
+ * The endpoint never jumps all the way to one noisy sample. A sample that is
+ * only slightly outside the envelope moves the endpoint slowly; a sample far
+ * outside the envelope pulls it more strongly.
  */
+uint16_t pull_endpoint(uint16_t endpoint, uint16_t extreme, bool toward_high)
+{
+    const uint16_t distance = toward_high
+        ? static_cast<uint16_t>(extreme - endpoint)
+        : static_cast<uint16_t>(endpoint - extreme);
+
+    if(distance == 0)
+        return endpoint;
+
+    uint16_t step = static_cast<uint16_t>(1U + (distance / 16U));
+
+    if(step > 32U)
+        step = 32U;
+
+    if(step > distance)
+        step = distance;
+
+    if(toward_high)
+        return static_cast<uint16_t>(endpoint + step);
+
+    return static_cast<uint16_t>(endpoint - step);
+}
+
+void update_calibration(uint16_t raw)
+{
+    if(!key1.initialized)
+    {
+        key1.low = raw;
+        key1.high = raw;
+        key1.boot_raw = raw;
+        key1.initialized = true;
+        return;
+    }
+
+    if(raw < key1.low)
+        key1.low = pull_endpoint(key1.low, raw, false);
+    else if(raw > key1.high)
+        key1.high = pull_endpoint(key1.high, raw, true);
+
+    if(key1.direction_locked)
+        return;
+
+    const int32_t delta =
+        static_cast<int32_t>(raw) -
+        static_cast<int32_t>(key1.boot_raw);
+
+    if(delta <= -static_cast<int32_t>(DIRECTION_LOCK_DISTANCE))
+    {
+        if(key1.low_direction_samples < DIRECTION_LOCK_SAMPLES)
+            ++key1.low_direction_samples;
+
+        key1.high_direction_samples = 0;
+
+        if(key1.low_direction_samples >= DIRECTION_LOCK_SAMPLES)
+        {
+            key1.direction_locked = true;
+            key1.pressed_toward_low = true;
+        }
+    }
+    else if(delta >= static_cast<int32_t>(DIRECTION_LOCK_DISTANCE))
+    {
+        if(key1.high_direction_samples < DIRECTION_LOCK_SAMPLES)
+            ++key1.high_direction_samples;
+
+        key1.low_direction_samples = 0;
+
+        if(key1.high_direction_samples >= DIRECTION_LOCK_SAMPLES)
+        {
+            key1.direction_locked = true;
+            key1.pressed_toward_low = false;
+        }
+    }
+    else
+    {
+        key1.low_direction_samples = 0;
+        key1.high_direction_samples = 0;
+    }
+}
+
 uint16_t raw_to_travel(uint16_t raw)
 {
-    const int32_t numerator =
-        static_cast<int32_t>(raw) -
-        static_cast<int32_t>(KEY_RELEASED_RAW);
+    const uint16_t span = static_cast<uint16_t>(key1.high - key1.low);
 
-    const int32_t denominator =
-        static_cast<int32_t>(KEY_PRESSED_RAW) -
-        static_cast<int32_t>(KEY_RELEASED_RAW);
-
-    if(denominator == 0)
+    if(!key1.initialized ||
+       !key1.direction_locked ||
+       span < DIRECTION_LOCK_DISTANCE)
+    {
         return 0;
+    }
 
-    return clamp_travel((numerator * 1000) / denominator);
+    if(key1.pressed_toward_low)
+    {
+        const int32_t travel =
+            (static_cast<int32_t>(key1.high) - raw) * 1000 /
+            static_cast<int32_t>(span);
+
+        return clamp_travel(travel);
+    }
+
+    const int32_t travel =
+        (static_cast<int32_t>(raw) - key1.low) * 1000 /
+        static_cast<int32_t>(span);
+
+    return clamp_travel(travel);
 }
 
 uint16_t hall_sample(void)
@@ -75,7 +186,13 @@ uint16_t hall_sample(void)
 
 void update_key(uint16_t travel)
 {
-    if(!key1.pressed)
+    if(!key1.direction_locked)
+    {
+        key1.pressed = false;
+        key1.peak_travel = 0;
+        key1.release_reference = 0;
+    }
+    else if(!key1.pressed)
     {
         uint16_t required_travel = ACTUATION_TRAVEL;
 
@@ -119,6 +236,7 @@ void update_key(uint16_t travel)
 extern "C" void nayomi_input_reset(void)
 {
     key1 = {};
+
     keyboard_report[0] = 0;
     keyboard_report[1] = 0;
     keyboard_report[2] = 0;
@@ -137,6 +255,8 @@ extern "C" void nayomi_input_sof(void)
     hall_raw = hall_sample();
     hall_millivolts =
         (static_cast<uint32_t>(hall_raw) * 3300U) / 4095U;
+
+    update_calibration(hall_raw);
 
     const uint16_t travel = raw_to_travel(hall_raw);
     update_key(travel);
