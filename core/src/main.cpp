@@ -7,6 +7,7 @@
 #include "board_pinout.h"
 #include "nayomi_usb.h"
 #include "nayomi_protocol.h"
+#include "nayomi_input.h"
 
 volatile uint16_t hall_raw = 0;
 volatile uint32_t hall_millivolts = 0;
@@ -518,6 +519,7 @@ int main(void)
 
         protocol_task();
         protocol_telemetry_task();
+        nayomi_input_sof();
         nayomi_usb_delay_ms(1);
     }
 }
