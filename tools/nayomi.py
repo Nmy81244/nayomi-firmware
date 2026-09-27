@@ -178,9 +178,11 @@ def print_info(payload):
     rest = payload[2:].split(b"\0")
     mcu = rest[0].decode(errors="replace")
     product = rest[1].decode(errors="replace") if len(rest) > 1 else "?"
+    version = rest[2].decode(errors="replace") if len(rest) > 2 else "?"
     print(f"Product : {product}")
     print(f"MCU     : {mcu}")
     print(f"API     : {api}")
+    print(f"Version : {version}")
 
 
 def print_status(payload):
